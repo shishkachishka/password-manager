@@ -14,16 +14,12 @@ import (
 	"password-manager/crypto"
 
 	"github.com/google/uuid"
-	"golang.org/x/term"
 )
 
-// ===== НАСТРОЙКИ =====
+//НАСТРОЙКИ
 
 type Config struct {
 	TelegramID string `json:"telegram_id"`
-	WebdavUser string `json:"webdav_user"`
-	WebdavPass string `json:"webdav_pass"`
-	WebdavURL  string `json:"webdav_url"`
 	SyncMode   string `json:"sync_mode"`
 }
 
@@ -41,17 +37,16 @@ func saveConfig() {
 	os.WriteFile("config.json", data, 0600)
 }
 
+var botURL = "https://password-bot-1p96.onrender.com"
+
 func chooseMode() {
 	scanner := bufio.NewScanner(os.Stdin)
 
-	fmt.Println("\n╔══════════════════════════════╗")
-	fmt.Println("║   ВЫБЕРИТЕ РЕЖИМ РАБОТЫ      ║")
-	fmt.Println("╠══════════════════════════════╣")
-	fmt.Println("║ 1. ☁️  Онлайн                ║")
-	fmt.Println("║    (синхронизация с ботом)   ║")
-	fmt.Println("║ 2. 💻 Офлайн                ║")
-	fmt.Println("║    (локальное хранение)      ║")
-	fmt.Println("╚══════════════════════════════╝")
+	fmt.Println("Выберите режим работы")
+	fmt.Println("1.☁️  Онлайн")
+	fmt.Println("(синхронизация с ботом)")
+	fmt.Println("2.💻 Офлайн")
+	fmt.Println("(локальное хранение)")
 
 	if config.SyncMode != "" {
 		fmt.Printf("текущий режим: %s\n", config.SyncMode)
@@ -63,28 +58,16 @@ func chooseMode() {
 	if choice == "1" {
 		config.SyncMode = "online"
 		if config.TelegramID == "" {
-			fmt.Println("\n📱 настройка синхронизации с ботом")
-			fmt.Print("введите ваш Telegram ID: ")
+			fmt.Println("\n📱 настройка синхронизации с ботом @passwordmebot")
+			fmt.Print("введите ваш Telegram ID (показывается в боте): ")
 			scanner.Scan()
 			config.TelegramID = strings.TrimSpace(scanner.Text())
-
-			fmt.Print("введите логин Яндекс.Диска: ")
-			scanner.Scan()
-			config.WebdavUser = strings.TrimSpace(scanner.Text())
-
-			fmt.Print("введите пароль приложения Яндекса: ")
-			passBytes, _ := term.ReadPassword(int(os.Stdin.Fd()))
-			config.WebdavPass = string(passBytes)
-			fmt.Println()
-
-			config.WebdavURL = "https://webdav.yandex.ru"
 		}
 		fmt.Println("✅ включен онлайн-режим")
 	} else if choice == "2" {
 		config.SyncMode = "offline"
 		fmt.Println("✅ включен офлайн-режим")
 	} else if config.SyncMode == "" {
-		// По умолчанию офлайн
 		config.SyncMode = "offline"
 		fmt.Println("✅ выбран офлайн-режим по умолчанию")
 	}
@@ -92,7 +75,7 @@ func chooseMode() {
 	saveConfig()
 }
 
-// ===== СТРУКТУРЫ =====
+//СТРУКТУРЫ
 
 type PasswordEntry struct {
 	ID        string    `json:"id"`
@@ -115,18 +98,19 @@ type PasswordManager struct {
 	filepath string
 }
 
-// ===== ХРАНИЛИЩЕ =====
+//ХРАНИЛИЩЕ
 
 func (pm *PasswordManager) loadStorage() *SafeData {
 	if pm.config.SyncMode == "online" {
-		return pm.loadFromYandexDisk()
+		return pm.loadFromBot()
 	}
 	return pm.loadLocal()
 }
 
 func (pm *PasswordManager) saveStorage() {
 	if pm.config.SyncMode == "online" {
-		pm.saveToYandexDisk()
+		pm.saveToBot()
+		fmt.Println("💾 данные отправлены боту")
 	} else {
 		pm.saveLocal()
 	}
@@ -147,42 +131,58 @@ func (pm *PasswordManager) saveLocal() {
 	os.WriteFile(pm.filepath, data, 0600)
 }
 
-func (pm *PasswordManager) loadFromYandexDisk() *SafeData {
-	filename := fmt.Sprintf("/password-bot/storage_%s.json", pm.config.TelegramID)
+// ОБЩЕНИЕ С БОТОМ
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, _ := http.NewRequest("GET", pm.config.WebdavURL+filename, nil)
-	req.SetBasicAuth(pm.config.WebdavUser, pm.config.WebdavPass)
+func (pm *PasswordManager) loadFromBot() *SafeData {
+	url := fmt.Sprintf("%s/api/load?id=%s", botURL, pm.config.TelegramID)
 
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			fmt.Printf("повторная попытка %d...\n", i+1)
+			time.Sleep(3 * time.Second)
+		}
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(url)
+		if err != nil || resp.StatusCode != 200 {
+			continue
+		}
+		defer resp.Body.Close()
+
+		data, _ := io.ReadAll(resp.Body)
+		fmt.Printf("DEBUG: ответ от бота: %s\n", string(data[:min(100, len(data))]))
+
+		var storage SafeData
+		json.Unmarshal(data, &storage)
+		if len(storage.MasterHash) > 0 {
+			return &storage
+		}
+	}
+
+	return &SafeData{Passwords: []PasswordEntry{}, Version: 1}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (pm *PasswordManager) saveToBot() {
+	url := fmt.Sprintf("%s/api/save?id=%s", botURL, pm.config.TelegramID)
+	data, _ := json.Marshal(pm.storage)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		return &SafeData{Passwords: []PasswordEntry{}, Version: 1}
+	if err != nil {
+		fmt.Println("⚠️ ошибка отправки боту:", err)
+		return
 	}
 	defer resp.Body.Close()
-
-	data, _ := io.ReadAll(resp.Body)
-	var storage SafeData
-	json.Unmarshal(data, &storage)
-	return &storage
 }
-
-func (pm *PasswordManager) saveToYandexDisk() {
-	filename := fmt.Sprintf("/password-bot/storage_%s.json", pm.config.TelegramID)
-	data, _ := json.MarshalIndent(pm.storage, "", "  ")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	req, _ := http.NewRequest("MKCOL", pm.config.WebdavURL+"/password-bot/", nil)
-	req.SetBasicAuth(pm.config.WebdavUser, pm.config.WebdavPass)
-	client.Do(req)
-
-	req, _ = http.NewRequest("PUT", pm.config.WebdavURL+filename, bytes.NewReader(data))
-	req.SetBasicAuth(pm.config.WebdavUser, pm.config.WebdavPass)
-	req.Header.Set("Content-Type", "application/json")
-	client.Do(req)
-}
-
-// ===== ОСНОВНЫЕ ФУНКЦИИ =====
 
 func NewPasswordManager(masterPassword string) (*PasswordManager, error) {
 	cm, err := crypto.NewCryptoManager(masterPassword)
@@ -190,18 +190,25 @@ func NewPasswordManager(masterPassword string) (*PasswordManager, error) {
 		return nil, err
 	}
 
-	filepath := "passwords.safe"
-	if config.SyncMode == "online" {
-		filepath = fmt.Sprintf("passwords_%s.safe", config.TelegramID)
-	}
-
 	pm := &PasswordManager{
 		crypto:   cm,
 		config:   config,
-		filepath: filepath,
+		filepath: "passwords.safe",
 	}
 
-	pm.storage = pm.loadStorage()
+	// Загружаем ОДИН раз
+	if config.SyncMode == "online" {
+		pm.storage = pm.loadFromBot()
+		if len(pm.storage.MasterHash) > 0 {
+			fmt.Println("✅ аккаунт найден у бота")
+		} else {
+			fmt.Println("⚠️ у бота нет данных")
+			pm.storage = &SafeData{Passwords: []PasswordEntry{}, Version: 1}
+		}
+	} else {
+		pm.storage = pm.loadLocal()
+	}
+
 	return pm, nil
 }
 
@@ -298,21 +305,20 @@ func (pm *PasswordManager) DeletePassword(id string) error {
 
 func readPasswordSecure() (string, error) {
 	fmt.Print("введите мастер-пароль: ")
-	password, err := term.ReadPassword(int(os.Stdin.Fd()))
-	if err != nil {
-		return "", err
-	}
-	fmt.Println()
-	return string(password), nil
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	return scanner.Text(), scanner.Err()
 }
 
-// ===== MAIN =====
+//MAIN
 
 func main() {
 	loadConfig()
-
-	// При каждом запуске спрашиваем режим
 	chooseMode()
+
+	if config.SyncMode == "online" && config.TelegramID != "" {
+		fmt.Println("🔄 синхронизация с ботом...")
+	}
 
 	masterPassword, err := readPasswordSecure()
 	if err != nil {
@@ -362,9 +368,8 @@ func main() {
 			note := strings.TrimSpace(scanner.Text())
 
 			fmt.Print("введите пароль: ")
-			passBytes, _ := term.ReadPassword(int(os.Stdin.Fd()))
-			password := string(passBytes)
-			fmt.Println()
+			scanner.Scan()
+			password := strings.TrimSpace(scanner.Text())
 
 			if password == "" {
 				fmt.Println("пароль не может быть пустым")
@@ -376,10 +381,6 @@ func main() {
 			} else {
 				fmt.Println("✅ пароль сохранен!")
 			}
-			for i := range passBytes {
-				passBytes[i] = 0
-			}
-
 		case "2":
 			pm.ListPasswords()
 
