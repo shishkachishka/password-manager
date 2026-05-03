@@ -34,12 +34,9 @@ func NewPasswordManager(masterPassword, filepath string) (*PasswordManager, erro
 
 func readPasswordSecure() (string, error) {
 	fmt.Print("введите мастер-пароль: ")
-	password, err := term.ReadPassword(int(os.Stdin.Fd()))
-	if err != nil {
-		return "", err
-	}
-	fmt.Println()
-	return string(password), nil
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	return scanner.Text(), scanner.Err()
 }
 
 func (pm *PasswordManager) Initialize(masterPassword string) error {
