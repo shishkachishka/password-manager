@@ -33,7 +33,7 @@ func NewPasswordManager(masterPassword, filepath string) (*PasswordManager, erro
 }
 
 func readPasswordSecure() (string, error) {
-	fmt.Print("Введите мастер-пароль: ")
+	fmt.Print("введите мастер-пароль: ")
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
 		return "", err
@@ -93,13 +93,13 @@ func (pm *PasswordManager) ListPasswords() error {
 	}
 
 	if len(data.Passwords) == 0 {
-		fmt.Println("Нет сохраненных паролей")
+		fmt.Println("нет сохраненных паролей")
 		return nil
 	}
 
-	fmt.Println("\n=== Сохраненные пароли ===")
+	fmt.Println("\nсохраненные пароли")
 	for i, entry := range data.Passwords {
-		fmt.Printf("%d. Заметка: %s (ID: %s, Создан: %s)\n",
+		fmt.Printf("%d. заметка: %s (ID: %s, создан: %s)\n",
 			i+1, entry.Note, entry.ID[:8], entry.CreatedAt.Format("02.01.2006 15:04"))
 	}
 	return nil
@@ -123,9 +123,9 @@ func (pm *PasswordManager) GetPassword(id string) error {
 				return err
 			}
 
-			fmt.Printf("\n=== Пароль для заметки '%s' ===\n", entry.Note)
-			fmt.Printf("Пароль: %s\n", password)
-			fmt.Printf("Создан: %s\n", entry.CreatedAt.Format("02.01.2006 15:04"))
+			fmt.Printf("\n пароль для заметки '%s' =\n", entry.Note)
+			fmt.Printf("пароль: %s\n", password)
+			fmt.Printf("создан: %s\n", entry.CreatedAt.Format("02.01.2006 15:04"))
 			return nil
 		}
 	}
@@ -157,73 +157,73 @@ func main() {
 
 	masterPassword, err := readPasswordSecure()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Ошибка чтения пароля: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ошибка чтения пароля: %v\n", err)
 		os.Exit(1)
 	}
 
 	pm, err := NewPasswordManager(masterPassword, filepath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Ошибка создания менеджера: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ошибка создания менеджера: %v\n", err)
 		os.Exit(1)
 	}
 
 	if isNew {
-		fmt.Println("Создание нового хранилища...")
+		fmt.Println("создание нового хранилища...")
 		if err := pm.Initialize(masterPassword); err != nil {
-			fmt.Fprintf(os.Stderr, "Ошибка инициализации: %v\n", err)
+			fmt.Fprintf(os.Stderr, "ошибка инициализации: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("Хранилище успешно создано!")
+		fmt.Println("хранилище успешно создано!")
 	} else {
 		data, err := pm.storage.Load()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Ошибка загрузки: %v\n", err)
+			fmt.Fprintf(os.Stderr, "ошибка загрузки: %v\n", err)
 			os.Exit(1)
 		}
 
 		if !crypto.VerifyMasterPassword(masterPassword, data.MasterHash, data.MasterSalt) {
-			fmt.Println("Неверный мастер-пароль!")
+			fmt.Println("неверный мастер-пароль!")
 			os.Exit(1)
 		}
-		fmt.Println("Доступ разрешен!")
+		fmt.Println("доступ разрешен!")
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
-		fmt.Println("\n=== Менеджер паролей ===")
-		fmt.Println("1. Добавить пароль")
-		fmt.Println("2. Показать все заметки")
-		fmt.Println("3. Получить пароль")
-		fmt.Println("4. Удалить пароль")
-		fmt.Println("5. Выход")
-		fmt.Print("Выберите действие: ")
+		fmt.Println("\nМенеджер паролей")
+		fmt.Println("1. добавить пароль")
+		fmt.Println("2. показать все заметки")
+		fmt.Println("3. получить пароль")
+		fmt.Println("4. удалить пароль")
+		fmt.Println("5. выход")
+		fmt.Print("выберите действие: ")
 
 		scanner.Scan()
 		choice := strings.TrimSpace(scanner.Text())
 
 		switch choice {
 		case "1":
-			fmt.Print("Введите заметку для пароля: ")
+			fmt.Print("введите заметку для пароля: ")
 			scanner.Scan()
 			note := strings.TrimSpace(scanner.Text())
 
-			fmt.Print("Введите пароль для сохранения: ")
+			fmt.Print("введите пароль для сохранения: ")
 			passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Ошибка чтения: %v\n", err)
+				fmt.Fprintf(os.Stderr, "ошибка чтения: %v\n", err)
 				continue
 			}
 			fmt.Println()
 			password := string(passwordBytes)
 
 			if password == "" {
-				fmt.Println("Пароль не может быть пустым")
+				fmt.Println("пароль не может быть пустым")
 				continue
 			}
 
 			if err := pm.AddPassword(note, password); err != nil {
-				fmt.Fprintf(os.Stderr, "Ошибка сохранения: %v\n", err)
+				fmt.Fprintf(os.Stderr, "ошибка сохранения: %v\n", err)
 				continue
 			}
 
@@ -231,39 +231,39 @@ func main() {
 				passwordBytes[i] = 0
 			}
 
-			fmt.Println("Пароль успешно сохранен!")
+			fmt.Println("пароль успешно сохранен!")
 
 		case "2":
 			if err := pm.ListPasswords(); err != nil {
-				fmt.Fprintf(os.Stderr, "Ошибка: %v\n", err)
+				fmt.Fprintf(os.Stderr, "ошибка: %v\n", err)
 			}
 
 		case "3":
-			fmt.Print("Введите ID пароля: ")
+			fmt.Print("введите ID пароля: ")
 			scanner.Scan()
 			id := strings.TrimSpace(scanner.Text())
 
 			if err := pm.GetPassword(id); err != nil {
-				fmt.Fprintf(os.Stderr, "Ошибка: %v\n", err)
+				fmt.Fprintf(os.Stderr, "ошибка: %v\n", err)
 			}
 
 		case "4":
-			fmt.Print("Введите ID пароля для удаления: ")
+			fmt.Print("введите ID пароля для удаления: ")
 			scanner.Scan()
 			id := strings.TrimSpace(scanner.Text())
 
 			if err := pm.DeletePassword(id); err != nil {
-				fmt.Fprintf(os.Stderr, "Ошибка: %v\n", err)
+				fmt.Fprintf(os.Stderr, "ошибка: %v\n", err)
 			} else {
-				fmt.Println("Пароль удален!")
+				fmt.Println("пароль удален")
 			}
 
 		case "5":
-			fmt.Println("До свидания!")
+			fmt.Println("до свидания")
 			return
 
 		default:
-			fmt.Println("Неверный выбор")
+			fmt.Println("неверный выбор")
 		}
 	}
 }
